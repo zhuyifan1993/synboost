@@ -31,6 +31,8 @@ opts = parser.parse_args()
 demo_folder = opts.demo_folder
 save_folder = opts.save_folder
 
+save_folder = 'Mbilly3_results_rarecase1'
+
 images = [os.path.join(demo_folder, image) for image in os.listdir(demo_folder)]
 detector = AnomalyDetector(True)
 
@@ -49,11 +51,47 @@ os.makedirs(entropy_path, exist_ok=True)
 os.makedirs(distance_path, exist_ok=True)
 os.makedirs(perceptual_diff_path, exist_ok=True)
 
-for idx, image in enumerate(images):
-    basename = os.path.basename(image).replace('.jpg', '.png')
-    print('Evaluating image %i out of %i'%(idx+1, len(images)))
-    image = Image.open(image)
-    results = detector.estimator_image(image)
+from mtce_data_apis.interfaces.database_interface import db
+
+# selection = db.get_user_selections(user='yifan')['yifan'][0]
+# sequence = selection.sequences[0]
+recording_id = "20210728_111927_Mbilly3.000720-001021"
+sequence = db.get_sequence(recording_id)
+print("sequence:", sequence)
+frame = sequence[0]
+print("image size:", frame.camera_SVM_front.image.shape)
+
+# read from mbilly3 json file
+import json
+from calibration import Calib
+json_file = "/m/das_data/00_config/20210618_AZEMB3/calib_result_MBilly3_SVM_front_AR_front_fisheye.json"
+with open(json_file, 'r') as f:
+    calibration = json.load(f)
+K = np.array(calibration['INTRINSIC_CALIBRATION']['ORIGINAL_IMAGE']['INTRINSICS'])
+D = np.array(calibration['INTRINSIC_CALIBRATION']['ORIGINAL_IMAGE']['DIST_COEFFS'])
+Knew = np.array(calibration['INTRINSIC_CALIBRATION']['UNDISTORTED_IMAGE']['INTRINSICS'])
+
+calib = Calib(calibration)
+f_map_x, f_map_y = calib.img_rectification('SVM_front')
+
+import tqdm
+import cv2
+for idx, img in enumerate(tqdm.tqdm(sequence)):
+
+    image = cv2.cvtColor(img.camera_SVM_front.image, cv2.COLOR_BGR2RGB)
+    # img_crop = cv2.fisheye.undistortImage(distorted = image, K = K, D = D, Knew = K)
+    image_undistorted = cv2.remap(image, f_map_x, f_map_y, interpolation=cv2.INTER_LINEAR)
+    y_margin = 400
+    x_margin = 5
+    img_crop = image_undistorted[0:-y_margin, x_margin:-x_margin].copy()
+    cv2.imwrite('temp_distort.png', image)
+    cv2.imwrite('temp_undistort.png', img_crop)
+
+    basename = str(idx) + '.png'
+    # print('Evaluating image %i out of %i'%(idx+1, len(images)))
+    # image = Image.open(image)
+    img_crop = Image.fromarray(img_crop)
+    results = detector.estimator_image(img_crop)
 
     anomaly_map = results['anomaly_map'].convert('RGB')
     anomaly_map.save(os.path.join(anomaly_path,basename))

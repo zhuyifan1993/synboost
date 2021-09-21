@@ -136,7 +136,13 @@ class AnomalyDetector():
             diss_pred = diss_pred[:, 1, :, :]
             
         # Resize outputs to original input image size
-        diss_pred = Image.fromarray(diss_pred.squeeze()*255).resize((image_og_w, image_og_h))
+        import cv2
+        diss_pred = (diss_pred * 255).astype(np.uint8).squeeze()
+        heatmap_prediction = cv2.applyColorMap((255-diss_pred), cv2.COLORMAP_JET)
+        heatmap_pred_im = Image.fromarray(heatmap_prediction).resize((2048, 1024))
+        combined_image = Image.blend(img, heatmap_pred_im, alpha=.5)
+
+        diss_pred = combined_image.resize((image_og_w, image_og_h))
         seg_img = semantic.resize((image_og_w, image_og_h))
         entropy = entropy_img.resize((image_og_w, image_og_h))
         perceptual_diff = perceptual_diff.resize((image_og_w, image_og_h))
